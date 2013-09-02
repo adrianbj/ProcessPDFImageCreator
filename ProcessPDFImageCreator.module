@@ -1,0 +1,215 @@
+<?php
+
+/**
+ * ProcessWire ProcessPDFImageCreator
+ *
+ * Process PDF Image Creator creates images from PDFs.
+ *
+ * @copyright Copyright (c) 2013, Adrian Jones
+ *
+ */
+
+class ProcessPDFImageCreator extends WireData implements Module {
+
+    /**
+     * Return information about this module (required)
+     *
+     * @return array
+     *
+     */
+    static public function getModuleInfo() {
+        return array(
+            'title'    => 'PDF Image Creator',
+            'summary'  => 'Creates images from PDFs.',
+            'version'  => 102,
+            'author'   => 'Adrian Jones',
+            'singular' => true,
+            'autoload' => true
+        );
+    }
+
+
+
+    /**
+     * Initialize the module and setup hook
+     */
+    public function init() {
+        $this->pages->addHook('save', $this, 'createPdfImages');
+    }
+
+
+     public function getNumPagesPdf($filepath){
+
+        $pagecount = '';
+
+        //Option 1
+        //The FPDI method is the best combination of accuracy and efficiency, but introduces yet another dependancy. There are also issues with the free version of FPDI and support for PDF > 1.4
+        //If you have the paid version, I think this is the best option. It is available here: http://www.setasign.de/products/pdf-php-solutions/fpdi/
+
+        require_once(wire('config')->paths->root.'tcpdf/tcpdf.php');
+        require_once(wire('config')->paths->root.'fpdi/fpdi.php');
+
+        $pdf = new FPDI();
+
+        $pagecount = $pdf->setSourceFile($filepath);
+
+        if($pagecount==''){
+            $im = new imagick($filepath);
+            $pagecount=$im->getNumberImages();
+        }
+
+        return $pagecount;
+
+
+
+        //Option 2
+        //If you have exec available, you can also try this option: http://stackoverflow.com/questions/14644353/finally-found-a-fast-easy-and-accurate-way-to-get-the-number-of-pages-in-a-pdf/14644354#14644354
+
+
+
+        //Option 3
+        //If you can't/don't want to use either of the above options, then the following should work for everyone.
+        //The first sub-option here is because the imagick method is very slow. It runs first and only resorts to the imagick option if it fails. Unfortunately, it often fails!
+
+        /*
+        $fp = @fopen(preg_replace("/\[(.*?)\]/i", "",$filepath),"r");
+        $max=0;
+        while(!feof($fp)) {
+                $line = fgets($fp,255);
+                if (preg_match('/\/Count [0-9]+/', $line, $matches)){
+                        preg_match('/[0-9]+/',$matches[0], $matches2);
+                        if ($max<$matches2[0]) $max=$matches2[0];
+                }
+        }
+        fclose($fp);
+
+        //If above failed ($max==0), then resort to imagick
+        if($max==0){
+            $im = new imagick($filepath);
+            $max=$im->getNumberImages();
+        }
+
+        return $max;
+        */
+
+    }
+
+
+
+    /**
+     * If document_pdf field contains a PDF, generate images for each page, stored in a standard multi images field.
+     * Should maybe switch document_pdf field to a standard files field, or maybe get modules to install the field. Should the module check availability of required fields in general when installing?
+     *
+     */
+    public function createPdfImages($event){
+
+        global $numPages, $image_filenames;
+
+        $page = $event->arguments[0];
+
+        $image_field = 'pdf_images'; //This can be defined to match an images field with a different name
+
+        if($page->$image_field){ // Check to see if the images field for the PDF images exists - if not then this template is not for making images of PDFs, so don't do anything else
+
+            if(count($page->document_pdf)>0){ // Make sure that a PDF has been uploaded before we do anything else
+
+                //populate array of filenames to check against before creating a page image
+                $image_filenames = [];
+                foreach($page->$image_field as $image){
+                    $image_filenames[] = $image->filename;
+                }
+
+                $numPages = $this->getNumPagesPdf($page->document_pdf->first()->filename);
+
+                //Check if number of images is less than the number of pages in the PDF or a new PDF with a different name has been uploaded since the original imagws were created
+                if(count($page->$image_field) != $numPages || pathinfo(str_replace('-0','',$page->$image_field->first()->filename),PATHINFO_FILENAME) != pathinfo($page->document_pdf->first()->filename,PATHINFO_FILENAME)){
+
+                    //If PDF name is different to image name, then a completely different PDF has been uploaded, so delete all old images and start from scratch
+                    if(pathinfo(str_replace('-0','',$page->$image_field->first()->filename),PATHINFO_FILENAME) != pathinfo($page->document_pdf->first()->filename,PATHINFO_FILENAME)){
+                        $page->$image_field->deleteAll();
+                    }
+
+                    for ($pn=0; $pn<$numPages; $pn++){ //Generate an image for each page of the PDF
+                        $this->createPdfImage($page, $image_field, $pn);
+                    }
+                }
+
+            }
+        }
+    }
+
+
+    /**
+     * Generate images.
+     *
+     */
+    public function createPdfImage($page, $image_field, $pn) {
+
+        global $numPages, $image_filenames;
+
+        $pdf_filepath = $page->document_pdf->first()->filename . '['.$pn.']'; //Build path to each page of the PDF
+        $jpg_filepath = str_replace('.pdf', '-'.$pn.'.jpg', $page->document_pdf->first()->filename); //Build path to save each image to
+
+
+        if(!in_array($jpg_filepath, $image_filenames) || !file_exists($jpg_filepath)){ //If it doesn't exist in the images array, or in the filesystem, then proceed to generate the image for that page
+
+
+            $resolution = 288; // Can't remember where I got 288 from - I think mostly trial and error many years ago, but seems to give best results
+
+            $im = new imagick();
+            $im->setOption("pdf:use-cropbox","true");
+            $im->setColorspace(Imagick::COLORSPACE_RGB);
+            $im->setResolution($resolution,$resolution);
+            $im->readImage($pdf_filepath);
+
+
+            $geometry=$im->getImageGeometry();
+
+            $width = ceil($geometry['width'] / ($resolution/72));
+            $height = ceil($geometry['height'] / ($resolution/72));
+
+            $im->setImageFormat("jpg");
+
+
+            if($width>1280 || $height>1024){
+
+                if($width>$height){
+                    $width = 1280;
+                    $height = 0;
+                }
+
+                if($height>$width){
+                    $height = 1024;
+                    $width = 0;
+                }
+
+            }
+            $im->scaleImage($width, $height);
+
+
+            $im->writeImage($jpg_filepath);
+
+            $page->of(false);
+            $page->$image_field->add($jpg_filepath);
+            $page->$image_field->last()->description = $page->title . ' Page ' . ($pn+1);
+
+
+            //Put the images in order in case one was missing/deleted and had to be re-created. Had to use this approach because PW's sort doesn't support natsort and want to keep images in page order
+            $images = $page->$image_field->getArray();
+            natsort($images);
+
+            $reversed_images = array_reverse($images);
+
+            $sortedImages = new WireArray();
+            $sortedImages->import($reversed_images);
+
+            $page->$image_field = $sortedImages;
+
+
+            $page->document_pdf_num_pages = $numPages;
+
+            $page->save();
+        }
+    }
+
+}
