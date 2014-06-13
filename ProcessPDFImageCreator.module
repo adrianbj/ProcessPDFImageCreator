@@ -21,10 +21,11 @@ class ProcessPDFImageCreator extends WireData implements Module {
         return array(
             'title'    => 'PDF Image Creator',
             'summary'  => 'Creates images from PDFs.',
-            'version'  => 102,
+            'version'  => 103,
             'author'   => 'Adrian Jones',
             'singular' => true,
-            'autoload' => true
+            'autoload' => true,
+            'icon'     => 'file-pdf-o'
         );
     }
 
