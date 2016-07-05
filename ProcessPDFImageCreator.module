@@ -21,7 +21,7 @@ class ProcessPDFImageCreator extends WireData implements Module {
         return array(
             'title'    => 'PDF Image Creator',
             'summary'  => 'Creates images from PDFs.',
-            'version'  => 103,
+            'version'  => 104,
             'author'   => 'Adrian Jones',
             'singular' => true,
             'autoload' => true,
@@ -209,7 +209,7 @@ class ProcessPDFImageCreator extends WireData implements Module {
 
             $page->document_pdf_num_pages = $numPages;
 
-            $page->save();
+            $page->save($image_field);
         }
     }
 
