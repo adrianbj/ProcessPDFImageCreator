@@ -21,7 +21,7 @@ class ProcessPDFImageCreator extends WireData implements Module {
         return array(
             'title'    => 'PDF Image Creator',
             'summary'  => 'Creates images from PDFs.',
-            'version'  => 105,
+            'version'  => '1.0.6',
             'author'   => 'Adrian Jones',
             'singular' => true,
             'autoload' => true,
@@ -165,7 +165,8 @@ class ProcessPDFImageCreator extends WireData implements Module {
             $im->setColorspace(Imagick::COLORSPACE_RGB);
             $im->setResolution($resolution,$resolution);
             $im->readImage($pdf_filepath);
-
+            $im->setImageBackgroundColor('#ffffff');
+            $im = $im->flattenImages();
 
             $geometry=$im->getImageGeometry();
 
