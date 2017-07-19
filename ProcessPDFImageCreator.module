@@ -9,6 +9,8 @@
  *
  */
 
+ini_set('max_execution_time', 0); // no time limit
+
 class ProcessPDFImageCreator extends WireData implements Module {
 
     /**
@@ -21,7 +23,7 @@ class ProcessPDFImageCreator extends WireData implements Module {
         return array(
             'title'    => 'PDF Image Creator',
             'summary'  => 'Creates images from PDFs.',
-            'version'  => '1.0.6',
+            'version'  => '1.0.7',
             'author'   => 'Adrian Jones',
             'singular' => true,
             'autoload' => true,
