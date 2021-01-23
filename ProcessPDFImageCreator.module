@@ -1,4 +1,4 @@
-<?php
+<?php namespace ProcessWire;
 
 /**
  * ProcessWire ProcessPDFImageCreator
@@ -9,7 +9,7 @@
  *
  */
 
-ini_set('max_execution_time', 0); // no time limit
+use setasign\Fpdi\Fpdi;
 
 class ProcessPDFImageCreator extends WireData implements Module {
 
@@ -23,7 +23,7 @@ class ProcessPDFImageCreator extends WireData implements Module {
         return array(
             'title'    => 'PDF Image Creator',
             'summary'  => 'Creates images from PDFs.',
-            'version'  => '1.0.7',
+            'version'  => '1.0.8',
             'author'   => 'Adrian Jones',
             'singular' => true,
             'autoload' => true,
@@ -36,61 +36,58 @@ class ProcessPDFImageCreator extends WireData implements Module {
     protected $image_filenames = array();
 
 
-    /**
-     * Initialize the module and setup hook
-     */
     public function init() {
         $this->pages->addHook('save', $this, 'processPdf');
     }
 
 
-     public function getNumPagesPdf($filepath){
+    public function getNumPagesPdf($filepath) {
 
         $pagecount = '';
 
-        //Option 1
-        //The FPDI method is the best combination of accuracy and efficiency, but introduces yet another dependancy. There are also issues with the free version of FPDI and support for PDF > 1.4
-        //If you have the paid version, I think this is the best option. It is available here: http://www.setasign.de/products/pdf-php-solutions/fpdi/
+        // Option 1
+        // The FPDI method is the best combination of accuracy and efficiency, but introduces yet another dependancy. There are also issues with the free version of FPDI and support for PDF > 1.4
+        // If you have the paid version, I think this is the best option. It is available here: http://www.setasign.de/products/pdf-php-solutions/fpdi/
 
-        require_once(wire('config')->paths->root.'tcpdf/tcpdf.php');
-        require_once(wire('config')->paths->root.'fpdi/fpdi.php');
+        require_once(wire('config')->paths->templates.'includes/fpdf/fpdf.php');
+        require_once(wire('config')->paths->templates.'includes/fpdi/src/autoload.php');
 
-        $pdf = new FPDI();
+        $pdf = new Fpdi();
 
         $pagecount = $pdf->setSourceFile($filepath);
 
-        if($pagecount==''){
-            $im = new imagick($filepath);
-            $pagecount=$im->getNumberImages();
+        if($pagecount == '') {
+            $im = new \imagick($filepath);
+            $pagecount = $im->getNumberImages();
         }
 
         return $pagecount;
 
 
 
-        //Option 2
-        //If you have exec available, you can also try this option: http://stackoverflow.com/questions/14644353/finally-found-a-fast-easy-and-accurate-way-to-get-the-number-of-pages-in-a-pdf/14644354#14644354
+        // Option 2
+        // If you have exec available, you can also try this option: http://stackoverflow.com/questions/14644353/finally-found-a-fast-easy-and-accurate-way-to-get-the-number-of-pages-in-a-pdf/14644354#14644354
 
 
 
-        //Option 3
-        //If you can't/don't want to use either of the above options, then the following should work for everyone.
-        //The first sub-option here is because the imagick method is very slow. It runs first and only resorts to the imagick option if it fails. Unfortunately, it often fails!
+        // Option 3
+        // If you can't/don't want to use either of the above options, then the following should work for everyone.
+        // The first sub-option here is because the imagick method is very slow. It runs first and only resorts to the imagick option if it fails. Unfortunately, it often fails!
 
         /*
         $fp = @fopen(preg_replace("/\[(.*?)\]/i", "",$filepath),"r");
         $max=0;
         while(!feof($fp)) {
                 $line = fgets($fp,255);
-                if (preg_match('/\/Count [0-9]+/', $line, $matches)){
+                if (preg_match('/\/Count [0-9]+/', $line, $matches)) {
                         preg_match('/[0-9]+/',$matches[0], $matches2);
                         if ($max<$matches2[0]) $max=$matches2[0];
                 }
         }
         fclose($fp);
 
-        //If above failed ($max==0), then resort to imagick
-        if($max==0){
+        // if above failed ($max==0), then resort to imagick
+        if($max==0) {
             $im = new imagick($filepath);
             $max=$im->getNumberImages();
         }
@@ -114,32 +111,35 @@ class ProcessPDFImageCreator extends WireData implements Module {
      * Should maybe switch document_pdf field to a standard files field, or maybe get modules to install the field. Should the module check availability of required fields in general when installing?
      *
      */
-    public function createPdfImages($page, $pdf_field_name){
+    public function createPdfImages($page, $pdf_field_name) {
 
-        $image_field = str_replace('document_pdf', 'pdf_images', $pdf_field_name); //This can be defined to match an images field with a different name
+        ini_set('max_execution_time', 0);
 
-        if($page->$image_field){ // Check to see if the images field for the PDF images exists - if not then this template is not for making images of PDFs, so don't do anything else
+        // this can be defined to match an images field with a different name
+        $image_field = str_replace('document_pdf', 'pdf_images', $pdf_field_name);
 
-            if(count($page->$pdf_field_name)>0){ // Make sure that a PDF has been uploaded before we do anything else
+        // check to see if the images field for the PDF images exists - if not then this template is not for making images of PDFs, so don't do anything else
+        if($page->$image_field) {
 
-                //populate array of filenames to check against before creating a page image
-                foreach($page->$image_field as $image){
+            // make sure that a PDF has been uploaded before we do anything else
+            if(count($page->$pdf_field_name) > 0) {
+
+                // populate array of filenames to check against before creating a page image
+                foreach($page->$image_field as $image) {
                     $this->image_filenames[] = $image->filename;
                 }
 
                 $this->numPages = $this->getNumPagesPdf($page->$pdf_field_name->first()->filename);
 
-                //Check if number of images is less than the number of pages in the PDF or a new PDF with a different name has been uploaded since the original imagws were created
-                if(count($page->$image_field) != $this->numPages || pathinfo(str_replace('-0','',$page->$image_field->first()->filename),PATHINFO_FILENAME) != pathinfo($page->$pdf_field_name->first()->filename,PATHINFO_FILENAME)){
+                // if PDF modified time newer than first image, delete all old images and start from scratch
+                if($page->$image_field->count() > 0 && $page->$pdf_field_name->first()->filemtime() > $page->$image_field->first()->filemtime()) {
+                    $page->$image_field->deleteAll();
+                    $page->save($image_field);
+                }
 
-                    //If PDF name is different to image name, then a completely different PDF has been uploaded, so delete all old images and start from scratch
-                    if(pathinfo(str_replace('-0','',$page->$image_field->first()->filename),PATHINFO_FILENAME) != pathinfo($page->$pdf_field_name->first()->filename,PATHINFO_FILENAME)){
-                        $page->$image_field->deleteAll();
-                    }
-
-                    for ($pn=0; $pn<$this->numPages; $pn++){ //Generate an image for each page of the PDF
-                        $this->createPdfImage($page, $image_field, $pdf_field_name, $pn);
-                    }
+                // generate an image for each page of the PDF
+                for ($pn=0; $pn<$this->numPages; $pn++) {
+                    $this->createPdfImage($page, $image_field, $pdf_field_name, $pn);
                 }
 
             }
@@ -153,55 +153,57 @@ class ProcessPDFImageCreator extends WireData implements Module {
      */
     public function createPdfImage($page, $image_field, $pdf_field_name, $pn) {
 
-        $pdf_filepath = $page->$pdf_field_name->first()->filename . '['.$pn.']'; //Build path to each page of the PDF
-        $jpg_filepath = str_replace('.pdf', '-'.$pn.'.jpg', $page->$pdf_field_name->first()->filename); //Build path to save each image to
+        // build path to each page of the PDF
+        $pdf_filepath = $page->$pdf_field_name->first()->filename . '['.$pn.']';
+        // build path to save each image to
+        $jpg_filepath = str_replace('.pdf', '-'.($pn+1).'.jpg', $page->$pdf_field_name->first()->filename);
 
+        // if it doesn't exist in the images array, or in the filesystem, then proceed to generate the image for that page
+        if(!in_array($jpg_filepath, $this->image_filenames) || !file_exists($jpg_filepath)) {
 
-        if(!in_array($jpg_filepath, $this->image_filenames) || !file_exists($jpg_filepath)){ //If it doesn't exist in the images array, or in the filesystem, then proceed to generate the image for that page
+            // can't remember where I got 288 from - I think mostly trial and error many years ago, but seems to give best results
+            $resolution = 288;
 
-
-            $resolution = 288; // Can't remember where I got 288 from - I think mostly trial and error many years ago, but seems to give best results
-
-            $im = new imagick();
+            $im = new \imagick();
             $im->setOption("pdf:use-cropbox","true");
-            $im->setColorspace(Imagick::COLORSPACE_RGB);
+            $im->setColorspace(\Imagick::COLORSPACE_RGB);
             $im->setResolution($resolution,$resolution);
             $im->readImage($pdf_filepath);
             $im->setImageBackgroundColor('#ffffff');
-            $im = $im->flattenImages();
+            //$im = $im->flattenImages();
+            // https://www.php.net/manual/en/imagick.flattenimages.php
+            $im->setImageAlphaChannel(\imagick::ALPHACHANNEL_REMOVE);
+            $im->mergeImageLayers(\imagick::LAYERMETHOD_FLATTEN);
 
-            $geometry=$im->getImageGeometry();
+            $geometry = $im->getImageGeometry();
 
             $width = ceil($geometry['width'] / ($resolution/72));
             $height = ceil($geometry['height'] / ($resolution/72));
 
             $im->setImageFormat("jpg");
 
+            if($width>1280 || $height>1024) {
 
-            if($width>1280 || $height>1024){
-
-                if($width>$height){
+                if($width>$height) {
                     $width = 1280;
                     $height = 0;
                 }
 
-                if($height>$width){
+                if($height>$width) {
                     $height = 1024;
                     $width = 0;
                 }
 
             }
+
             $im->scaleImage($width, $height);
-
-
             $im->writeImage($jpg_filepath);
-
             $page->of(false);
             $page->$image_field->add($jpg_filepath);
-            $page->$image_field->last()->description = $page->title . ' Page ' . ($pn+1);
+            $page->$image_field->last()->description = html_entity_decode($page->title) . ' (Page ' . ($pn+1) . ')';
 
-
-            //Put the images in order in case one was missing/deleted and had to be re-created. Had to use this approach because PW's sort doesn't support natsort and want to keep images in page order
+            // put the images in order in case one was missing/deleted and had to be re-created.
+            // had to use this approach because PW's sort doesn't support natsort and want to keep images in page order
             $images = $page->$image_field->getArray();
             natsort($images);
 
@@ -212,10 +214,10 @@ class ProcessPDFImageCreator extends WireData implements Module {
 
             $page->$image_field = $sortedImages;
 
-
-            $page->document_pdf_num_pages = $numPages;
+            $page->setAndSave('document_pdf_num_pages', $this->numPages);
 
             $page->save($image_field);
+
         }
     }
 

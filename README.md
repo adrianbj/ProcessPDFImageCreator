@@ -1,10 +1,8 @@
-ProcessPDFImageCreator
-======================
+# ProcessPDFImageCreator
 
 ProcessWire module to automatically generate images from all the pages of an uploaded PDF
 
-
-##Usage
+## Usage
 
 Create an multiple images field called "pdf_images"
 Create a files field called "document_pdf"
@@ -15,7 +13,7 @@ WARNING: the generation process can be quite slow - up to a few minutes if the P
 
 
 
-##How to install
+## How to install
 
 Your server must have imagemagick, ghostscript, and the imagick pecl extension installed
 
@@ -26,12 +24,12 @@ In the admin control panel, go to Modules. At the bottom of the screen, click th
 Now scroll to the ProcessPDFImageCreator module and click "Install".
 
 
-##ToDo
+## ToDo
 
 Add a spinner to indicate that the images are being generated, or hook into the file upload process and start the image generation immediately after upload has completed and show a new bar with the progress of image generation.
 
 
-##Support forum
+## Support forum
 http://processwire.com/talk/topic/3304-pdf-image-generator/
 
 
